@@ -1,0 +1,56 @@
+name: 招聘投稿与发布
+
+on:
+  issues:
+    types: [opened, edited, reopened, closed]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Reconcile all open submissions in every run, including any superseded queued event.
+concurrency:
+  group: recruitment-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout trusted main branch
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Unpack reviewed public website runtime
+        run: python3 -m zipfile -e website-runtime.zip .
+      - name: Reconcile submissions and generate Excel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 manage_contributions.py prepare
+      - name: Render public website
+        run: node rebuild.mjs
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload only public output
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+      - name: Deploy website
+        id: deployment
+        uses: actions/deploy-pages@v4
+      - name: Report successful publication and missing fields
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 manage_contributions.py announce
